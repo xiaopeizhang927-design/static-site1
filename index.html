@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能记账助手</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: #f9fafb;
+        }
+        .container { max-width: 640px; margin: 0 auto; }
+        .header {
+            background: linear-gradient(135deg, #fb923c 0%, #ec4899 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 0 0 1.5rem 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .budget-card {
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        .progress-bar {
+            background: rgba(255,255,255,0.3);
+            border-radius: 9999px;
+            height: 0.5rem;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+        .progress-fill {
+            height: 100%;
+            transition: width 0.3s, background 0.3s;
+        }
+        .warning {
+            margin-top: 0.75rem;
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            font-size: 0.875rem;
+        }
+        .warning.hidden { display: none; }
+        .warning-yellow { background: #eab308; color: white; animation: pulse 2s infinite; }
+        .warning-red { background: #dc2626; color: white; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
+        .actions {
+            display: flex;
+            gap: 0.75rem;
+            padding: 1rem;
+        }
+        .action-btn {
+            flex: 1;
+            background: white;
+            border: none;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+        }
+        .action-btn:hover { box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0 1rem;
+            margin-bottom: 1rem;
+        }
+        .tab {
+            flex: 1;
+            padding: 0.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab.active { background: #fb923c; color: white; }
+        .tab:not(.active) { background: white; color: #6b7280; }
+        .content { padding: 0 1rem 5rem; }
+        .expense-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .expense-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .expense-icon {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 50;
+            align-items: flex-end;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: white;
+            width: 100%;
+            border-radius: 1.5rem 1.5rem 0 0;
+            padding: 1.5rem;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .input, .select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.75rem;
+            font-size: 1rem;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #fb923c; color: white; }
+        .btn-primary:hover { background: #ea580c; }
+        .btn-secondary { background: #e5e7eb; color: #374151; }
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+        }
+        .category-btn {
+            padding: 0.75rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+        }
+        .category-btn.active {
+            border-color: #fb923c;
+            background: #fff7ed;
+        }
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        .login-card {
+            background: white;
+            border-radius: 1.5rem;
+            padding: 2rem;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .hidden { display: none !important; }
+        .text-center { text-align: center; }
+        .mb-1 { margin-bottom: 0.25rem; }
+        .mb-2 { margin-bottom: 0.5rem; }
+        .mb-3 { margin-bottom: 0.75rem; }
+        .mb-4 { margin-bottom: 1rem; }
+        .mt-2 { margin-top: 0.5rem; }
+        .mt-3 { margin-top: 0.75rem; }
+        .mt-4 { margin-top: 1rem; }
+        .flex { display: flex; }
+        .flex-1 { flex: 1; }
+        .gap-2 { gap: 0.5rem; }
+        .gap-3 { gap: 0.75rem; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .text-xl { font-size: 1.25rem; }
+        .text-2xl { font-size: 1.5rem; }
+        .text-3xl { font-size: 1.875rem; }
+        .text-sm { font-size: 0.875rem; }
+        .text-xs { font-size: 0.75rem; }
+        .font-bold { font-weight: 700; }
+        .font-medium { font-weight: 500; }
+        .text-gray-400 { color: #9ca3af; }
+        .text-gray-500 { color: #6b7280; }
+        .text-gray-600 { color: #4b5563; }
+        .text-gray-700 { color: #374151; }
+        .text-red-500 { color: #ef4444; }
+        .text-green-500 { color: #10b981; }
+        .text-blue-500 { color: #3b82f6; }
+        .w-full { width: 100%; }
+        .stat-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            text-align: center;
+        }
+        .category-stat {
+            margin-bottom: 0.75rem;
+        }
+        .category-bar {
+            background: #e5e7eb;
+            border-radius: 9999px;
+            height: 0.5rem;
+            overflow: hidden;
+        }
+        .category-bar-fill {
+            height: 100%;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 登录界面 -->
+        <div id="loginScreen" class="login-container hidden">
+            <div class="login-card">
+                <div class="text-center mb-4">
+                    <div style="font-size: 3.75rem; margin-bottom: 1rem;">💰</div>
+                    <h1 class="text-2xl font-bold mb-2">智能记账助手</h1>
+                    <p class="text-gray-500">多设备云同步，数据永不丢失</p>
+                </div>
+                
+                <div id="loginForm">
+                    <input type="email" id="emailInput" class="input mb-3" placeholder="邮箱地址" />
+                    <input type="password" id="passwordInput" class="input mb-4" placeholder="密码（至少6位）" />
+                    <button onclick="handleLogin()" class="btn btn-primary w-full mb-3">登录</button>
+                    <button onclick="handleSignup()" class="btn btn-secondary w-full">注册新账号</button>
+                    <div id="authMessage" class="mt-4 text-sm text-center"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主应用界面 -->
+        <div id="mainApp" class="container hidden">
+            <div class="header">
+                <div class="flex justify-between items-center mb-3">
+                    <h1 class="text-2xl font-bold">记账本</h1>
+                    <button onclick="handleLogout()" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 0.5rem 1rem; font-size: 0.875rem;">退出</button>
+                </div>
+                
+                <div class="budget-card">
+                    <div class="flex justify-between items-center mb-2">
+                        <div class="text-sm" style="opacity: 0.9;">本月预算 (欧元)</div>
+                        <button onclick="editBudget()" style="background: none; border: none; color: white; cursor: pointer; opacity: 0.8;">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="text-3xl font-bold mb-2">€<span id="budgetAmount">2000.00</span></div>
+                    <div class="flex justify-between text-sm mb-2">
+                        <span>已支出 €<span id="totalExpenses">0.00</span></span>
+                        <span>剩余 €<span id="balance">2000.00</span></span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="budgetBar" class="progress-fill" style="width: 0%; background: #10b981;"></div>
+                    </div>
+                    <div id="budgetWarning" class="warning hidden"></div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button onclick="showAddModal()" class="action-btn">
+                    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">➕</div>
+                    <div class="text-sm font-medium">手动记账</div>
+                </button>
+                <button onclick="syncData()" class="action-btn">
+                    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔄</div>
+                    <div class="text-sm font-medium">刷新数据</div>
+                </button>
+            </div>
+
+            <div class="tabs">
+                <button id="tabLedger" class="tab active" onclick="switchTab('ledger')">账单</button>
+                <button id="tabStats" class="tab" onclick="switchTab('stats')">统计</button>
+            </div>
+
+            <div class="content">
+                <div id="ledgerView">
+                    <div id="expensesList"></div>
+                </div>
+
+                <div id="statsView" class="hidden">
+                    <div class="stat-card">
+                        <h3 class="font-bold text-xl mb-4">收支统计 (欧元)</h3>
+                        <div class="stat-grid">
+                            <div>
+                                <div class="text-gray-500 text-sm mb-1">支出</div>
+                                <div class="text-xl font-bold text-red-500">€<span id="statsExpenses">0.00</span></div>
+                            </div>
+                            <div>
+                                <div class="text-gray-500 text-sm mb-1">收入</div>
+                                <div class="text-xl font-bold text-green-500">€<span id="statsIncome">0.00</span></div>
+                            </div>
+                            <div>
+                                <div class="text-gray-500 text-sm mb-1">结余</div>
+                                <div class="text-xl font-bold text-blue-500">€<span id="statsBalance">0.00</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="font-bold text-xl mb-4">支出分类详情</h3>
+                        <div id="categoryStats"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 添加记账弹窗 -->
+        <div id="addModal" class="modal">
+            <div class="modal-content">
+                <h3 class="text-xl font-bold mb-4">添加支出</h3>
+                
+                <div class="mb-4">
+                    <label class="text-sm font-medium mb-2" style="display: block;">分类</label>
+                    <div class="category-grid" id="categoryGrid"></div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="text-sm font-medium mb-2" style="display: block;">描述</label>
+                    <input type="text" id="descInput" class="input" placeholder="例如：午餐" />
+                </div>
+
+                <div class="mb-4">
+                    <label class="text-sm font-medium mb-2" style="display: block;">金额</label>
+                    <div class="flex gap-2">
+                        <input type="number" id="amountInput" class="input" placeholder="0.00" step="0.01" style="flex: 1;" />
+                        <select id="currencySelect" class="select" style="width: 100px;">
+                            <option value="EUR">€ EUR</option>
+                            <option value="CNY">¥ CNY</option>
+                            <option value="USD">$ USD</option>
+                            <option value="GBP">£ GBP</option>
+                            <option value="JPY">¥ JPY</option>
+                        </select>
+                    </div>
+                    <div id="eurConversion" class="mt-2 text-sm text-gray-500"></div>
+                </div>
+
+                <div class="flex gap-3">
+                    <button onclick="closeAddModal()" class="btn btn-secondary flex-1">取消</button>
+                    <button onclick="saveExpense()" class="btn btn-primary flex-1">确定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Supabase 配置
+        const SUPABASE_URL = 'https://yqyfapfmsddeeiuzlnvq.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxeWZhcGZtc2RkZWVpdXpsbnZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1MDgwNDgsImV4cCI6MjA4NDA4NDA0OH0.nvlXAlqCWi0NOxc3zJTgE_5G8ui9hZKOqgFdEv4jWoM';
+        
+        let supabaseClient = null;
+        let currentUser = null;
+        let expenses = [];
+        let monthlyBudget = 2000;
+        let selectedCategory = '餐饮美食';
+
+        const categories = [
+            { name: '餐饮美食', icon: '🍜', color: '#f87171' },
+            { name: '超市采购', icon: '🛒', color: '#fb923c' },
+            { name: '交通出行', icon: '🚗', color: '#fbbf24' },
+            { name: '购物消费', icon: '🛍️', color: '#34d399' },
+            { name: '娱乐休闲', icon: '🎮', color: '#60a5fa' },
+            { name: '日化用品', icon: '🧴', color: '#a78bfa' },
+            { name: '订阅服务', icon: '📱', color: '#ec4899' },
+            { name: '房租水电', icon: '🏠', color: '#6366f1' },
+            { name: '其他', icon: '📦', color: '#9ca3af' }
+        ];
+
+        const exchangeRates = {
+            'CNY': 0.13, 'EUR': 1, 'USD': 0.92, 'GBP': 1.17, 'JPY': 0.0062
+        };
+
+        const currencySymbols = {
+            'EUR': '€', 'CNY': '¥', 'USD': '$', 'GBP': '£', 'JPY': '¥'
+        };
+
+        async function init() {
+            if (SUPABASE_URL === 'YOUR_SUPABASE_URL') {
+                showMessage('⚠️ 请先配置 Supabase！详见部署教程。', 'error');
+                document.getElementById('loginScreen').classList.remove('hidden');
+                return;
+            }
+
+            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            
+            const { data: { user } } = await supabaseClient.auth.getUser();
+            
+            if (user) {
+                currentUser = user;
+                await loadUserData();
+                showMainApp();
+            } else {
+                showLoginScreen();
+            }
+        }
+
+        function showLoginScreen() {
+            document.getElementById('loginScreen').classList.remove('hidden');
+            document.getElementById('mainApp').classList.add('hidden');
+        }
+
+        function showMainApp() {
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('mainApp').classList.remove('hidden');
+            renderCategoryGrid();
+            renderExpenses();
+            updateStats();
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById('emailInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+
+            if (!email || !password) {
+                showMessage('请输入邮箱和密码', 'error');
+                return;
+            }
+
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+            if (error) {
+                showMessage('登录失败：' + error.message, 'error');
+            } else {
+                currentUser = data.user;
+                await loadUserData();
+                showMainApp();
+            }
+        }
+
+        async function handleSignup() {
+            const email = document.getElementById('emailInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+
+            if (!email || !password) {
+                showMessage('请输入邮箱和密码', 'error');
+                return;
+            }
+
+            if (password.length < 6) {
+                showMessage('密码至少需要6位', 'error');
+                return;
+            }
+
+            const { error } = await supabaseClient.auth.signUp({ email, password });
+
+            if (error) {
+                showMessage('注册失败：' + error.message, 'error');
+            } else {
+                showMessage('✅ 注册成功！请检查邮箱完成验证，然后登录。', 'success');
+            }
+        }
+
+        async function handleLogout() {
+            await supabaseClient.auth.signOut();
+            currentUser = null;
+            expenses = [];
+            showLoginScreen();
+        }
+
+        async function loadUserData() {
+            const { data: budgetData } = await supabaseClient
+                .from('user_settings')
+                .select('monthly_budget')
+                .eq('user_id', currentUser.id)
+                .single();
+
+            if (budgetData) {
+                monthlyBudget = budgetData.monthly_budget;
+            } else {
+                await supabaseClient.from('user_settings').insert({
+                    user_id: currentUser.id,
+                    monthly_budget: 2000
+                });
+            }
+
+            const { data: expensesData } = await supabaseClient
+                .from('expenses')
+                .select('*')
+                .eq('user_id', currentUser.id)
+                .order('date', { ascending: false });
+
+            expenses = expensesData || [];
+        }
+
+        async function syncData() {
+            showMessage('正在同步数据...', 'info');
+            await loadUserData();
+            renderExpenses();
+            updateStats();
+            showMessage('✅ 同步完成！', 'success');
+        }
+
+        function renderCategoryGrid() {
+            const grid = document.getElementById('categoryGrid');
+            grid.innerHTML = categories.map(cat => `
+                <button class="category-btn ${cat.name === selectedCategory ? 'active' : ''}" onclick="selectCategory('${cat.name}')">
+                    <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">${cat.icon}</div>
+                    <div class="text-xs">${cat.name}</div>
+                </button>
+            `).join('');
+        }
+
+        function selectCategory(name) {
+            selectedCategory = name;
+            renderCategoryGrid();
+        }
+
+        function renderExpenses() {
+            const list = document.getElementById('expensesList');
+            if (expenses.length === 0) {
+                list.innerHTML = '<div class="text-center text-gray-400" style="padding: 2rem 0;">暂无记录</div>';
+                return;
+            }
+
+            list.innerHTML = expenses.map(exp => {
+                const cat = categories.find(c => c.name === exp.category) || categories[categories.length - 1];
+                return `
+                    <div class="expense-card">
+                        <div class="expense-header">
+                            <div class="flex items-center gap-3">
+                                <div class="expense-icon" style="background: ${cat.color};">${cat.icon}</div>
+                                <div>
+                                    <div class="font-medium">${exp.category}</div>
+                                    <div class="text-sm text-gray-500">${exp.description}</div>
+                                    <div class="text-xs text-gray-400">${exp.date}</div>
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="font-bold ${exp.amount_eur < 0 ? 'text-green-500' : 'text-gray-700'}" style="font-size: 1.125rem;">
+                                    ${exp.amount_eur < 0 ? '+' : '-'}€${Math.abs(exp.amount_eur).toFixed(2)}
+                                </div>
+                                <div class="text-xs text-gray-400">
+                                    ${currencySymbols[exp.currency]}${Math.abs(exp.amount).toFixed(2)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateStats() {
+            const totalExpenses = expenses.filter(e => e.amount_eur > 0).reduce((sum, e) => sum + e.amount_eur, 0);
+            const totalIncome = Math.abs(expenses.filter(e => e.amount_eur < 0).reduce((sum, e) => sum + e.amount_eur, 0));
+            const balance = monthlyBudget - totalExpenses;
+            const budgetPercent = (totalExpenses / monthlyBudget) * 100;
+
+            document.getElementById('budgetAmount').textContent = monthlyBudget.toFixed(2);
+            document.getElementById('totalExpenses').textContent = totalExpenses.toFixed(2);
+            document.getElementById('balance').textContent = balance.toFixed(2);
+            
+            const bar = document.getElementById('budgetBar');
+            bar.style.width = Math.min(budgetPercent, 100) + '%';
+            bar.style.background = budgetPercent >= 80 ? '#ef4444' : '#10b981';
+
+            const warning = document.getElementById('budgetWarning');
+            if (budgetPercent >= 80 && budgetPercent < 100) {
+                warning.classList.remove('hidden');
+                warning.className = 'warning warning-yellow';
+                warning.textContent = `⚠️ 本月预算已使用${budgetPercent.toFixed(0)}%，请注意控制消费💰`;
+            } else if (budgetPercent >= 100) {
+                warning.classList.remove('hidden');
+                warning.className = 'warning warning-red';
+                warning.textContent = `🚨 本月预算已超支 €${(totalExpenses - monthlyBudget).toFixed(2)}，要省钱啦！`;
+            } else {
+                warning.classList.add('hidden');
+            }
+
+            document.getElementById('statsExpenses').textContent = totalExpenses.toFixed(2);
+            document.getElementById('statsIncome').textContent = totalIncome.toFixed(2);
+            document.getElementById('statsBalance').textContent = (totalIncome - totalExpenses).toFixed(2);
+
+            const categoryStats = {};
+            expenses.filter(e => e.amount_eur > 0).forEach(exp => {
+                if (!categoryStats[exp.category]) categoryStats[exp.category] = 0;
+                categoryStats[exp.category] += exp.amount_eur;
+            });
+
+            const statsHtml = Object.entries(categoryStats)
+                .sort((a, b) => b[1] - a[1])
+                .map(([cat, amount]) => {
+                    const percent = (amount / totalExpenses * 100).toFixed(2);
+                    const catObj = categories.find(c => c.name === cat) || categories[categories.length - 1];
+                    return `
+                        <div class="category-stat">
+                            <div class="flex justify-between mb-1">
+                                <span class="text-sm font-medium">${cat}</span>
+                                <span class="text-sm text-gray-600">€${amount.toFixed(2)} (${percent}%)</span>
+                            </div>
+                            <div class="category-bar">
+                                <div class="category-bar-fill" style="width: ${percent}%; background: ${catObj.color};"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            document.getElementById('categoryStats').innerHTML = statsHtml || '<div class="text-center text-gray-400">暂无数据</div>';
+        }
+
+        function switchTab(tab) {
+            if (tab === 'ledger') {
+                document.getElementById('ledgerView').classList.remove('hidden');
+                document.getElementById('statsView').classList.add('hidden');
+                document.getElementById('tabLedger').classList.add('active');
+                document.getElementById('tabStats').classList.remove('active');
+            } else {
+                document.getElementById('ledgerView').classList.add('hidden');
+                document.getElementById('statsView').classList.remove('hidden');
+                document.getElementById('tabLedger').classList.remove('active');
+                document.getElementById('tabStats').classList.add('active');
+            }
+        }
+
+        function showAddModal() {
+            document.getElementById('addModal').classList.add('active');
+        }
+
+        function closeAddModal() {
+            document.getElementById('addModal').classList.remove('active');
+            document.getElementById('descInput').value = '';
+            document.getElementById('amountInput').value = '';
+        }
+
+        async function saveExpense() {
+            const description = document.getElementById('descInput').value.trim();
+            const amount = parseFloat(document.getElementById('amountInput').value);
+            const currency = document.getElementById('currencySelect').value;
+
+            if (!description || !amount) {
+                showMessage('请填写完整信息', 'error');
+                return;
+            }
+
+            const amountEur = amount * exchangeRates[currency];
+
+            const { data, error } = await supabaseClient.from('expenses').insert({
+                user_id: currentUser.id,
+                category: selectedCategory,
+                description: description,
+                amount: amount,
+                currency: currency,
+                amount_eur: amountEur,
+                date: new Date().toISOString().split('T')[0]
+            }).select();
+
+            if (error) {
+                showMessage('保存失败：' + error.message, 'error');
+            } else {
+                expenses.unshift(data[0]);
+                renderExpenses();
+                updateStats();
+                closeAddModal();
+                showMessage('✅ 记账成功！', 'success');
+            }
+        }
+
+        async function editBudget() {
+            const newBudget = prompt('请输入新的月度预算（欧元）：', monthlyBudget);
+            if (newBudget && !isNaN(newBudget)) {
+                monthlyBudget = parseFloat(newBudget);
+                await supabaseClient.from('user_settings').upsert({
+                    user_id: currentUser.id,
+                    monthly_budget: monthlyBudget
+                });
+                updateStats();
+                showMessage('✅ 预算已更新！', 'success');
+            }
+        }
+
+        document.getElementById('amountInput').addEventListener('input', updateEurConversion);
+        document.getElementById('currencySelect').addEventListener('change', updateEurConversion);
+
+        function updateEurConversion() {
+            const amount = parseFloat(document.getElementById('amountInput').value);
+            const currency = document.getElementById('currencySelect').value;
+            const conv = document.getElementById('eurConversion');
+            
+            if (amount && currency !== 'EUR') {
+                const eurAmount = amount * exchangeRates[currency];
+                conv.textContent = `≈ €${eurAmount.toFixed(2)} 欧元`;
+            } else {
+                conv.textContent = '';
+            }
+        }
+
+        function showMessage(message, type) {
+            const authMsg = document.getElementById('authMessage');
+            if (authMsg) {
+                authMsg.textContent = message;
+                authMsg.className = `mt-4 text-sm text-center ${type === 'error' ? 'text-red-500' : type === 'success' ? 'text-green-500' : 'text-blue-500'}`;
+            } else {
+                alert(message);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
