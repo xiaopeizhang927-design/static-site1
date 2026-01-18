@@ -364,7 +364,7 @@
     </div>
 
     <script>
-        // Supabase 配置
+        // Supabase 配置 - ⚠️ 重要：替换为你的实际配置！
         const SUPABASE_URL = 'https://yqyfapfmsddeeiuzlnvq.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxeWZhcGZtc2RkZWVpdXpsbnZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1MDgwNDgsImV4cCI6MjA4NDA4NDA0OH0.nvlXAlqCWi0NOxc3zJTgE_5G8ui9hZKOqgFdEv4jWoM';
         
@@ -393,7 +393,6 @@
         const currencySymbols = {
             'EUR': '€', 'CNY': '¥', 'USD': '$', 'GBP': '£', 'JPY': '¥'
         };
-
         async function init() {
             if (SUPABASE_URL === 'YOUR_SUPABASE_URL') {
                 showMessage('⚠️ 请先配置 Supabase！详见部署教程。', 'error');
@@ -428,27 +427,47 @@
         }
 
         async function handleLogin() {
-            const email = document.getElementById('emailInput').value.trim();
-            const password = document.getElementById('passwordInput').value;
+            const email = document.getElementById('emailInput').value.trim().toLowerCase();
+            const password = document.getElementById('passwordInput').value.trim();
 
             if (!email || !password) {
                 showMessage('请输入邮箱和密码', 'error');
                 return;
             }
 
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            try {
+                showMessage('正在登录...', 'info');
+                console.log('尝试登录:', email);
+                console.log('密码长度:', password.length);
+                
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ 
+                    email: email, 
+                    password: password 
+                });
 
-            if (error) {
-                showMessage('登录失败：' + error.message, 'error');
-            } else {
-                currentUser = data.user;
-                await loadUserData();
-                showMainApp();
+                if (error) {
+                    console.error('登录错误详情:', error);
+                    let errorMsg = '登录失败';
+                    if (error.message.includes('Invalid login credentials')) {
+                        errorMsg = '邮箱或密码错误，请检查后重试';
+                    } else {
+                        errorMsg = error.message;
+                    }
+                    showMessage(errorMsg + ' (尝试的邮箱: ' + email + ')', 'error');
+                } else {
+                    console.log('登录成功:', data.user.email);
+                    currentUser = data.user;
+                    await loadUserData();
+                    showMainApp();
+                }
+            } catch (err) {
+                console.error('登录异常:', err);
+                showMessage('登录异常：' + err.toString(), 'error');
             }
         }
 
         async function handleSignup() {
-            const email = document.getElementById('emailInput').value.trim();
+            const email = document.getElementById('emailInput').value.trim().toLowerCase();
             const password = document.getElementById('passwordInput').value;
 
             if (!email || !password) {
@@ -461,12 +480,24 @@
                 return;
             }
 
-            const { error } = await supabaseClient.auth.signUp({ email, password });
+            try {
+                showMessage('正在注册...', 'info');
+                console.log('尝试注册:', email);
+                
+                const { error } = await supabaseClient.auth.signUp({ 
+                    email: email, 
+                    password: password 
+                });
 
-            if (error) {
-                showMessage('注册失败：' + error.message, 'error');
-            } else {
-                showMessage('✅ 注册成功！请检查邮箱完成验证，然后登录。', 'success');
+                if (error) {
+                    console.error('注册错误详情:', error);
+                    showMessage('注册失败：' + error.message, 'error');
+                } else {
+                    showMessage('✅ 注册成功！请直接登录（已自动验证）', 'success');
+                }
+            } catch (err) {
+                console.error('注册异常:', err);
+                showMessage('注册异常：' + err.toString(), 'error');
             }
         }
 
@@ -478,28 +509,53 @@
         }
 
         async function loadUserData() {
-            const { data: budgetData } = await supabaseClient
-                .from('user_settings')
-                .select('monthly_budget')
-                .eq('user_id', currentUser.id)
-                .single();
+            try {
+                const { data: budgetData, error: budgetError } = await supabaseClient
+                    .from('user_settings')
+                    .select('monthly_budget')
+                    .eq('user_id', currentUser.id)
+                    .single();
 
-            if (budgetData) {
-                monthlyBudget = budgetData.monthly_budget;
-            } else {
-                await supabaseClient.from('user_settings').insert({
-                    user_id: currentUser.id,
-                    monthly_budget: 2000
-                });
+                if (budgetError) {
+                    if (budgetError.code === 'PGRST116') {
+                        console.log('创建默认用户设置');
+                        const { error: insertError } = await supabaseClient
+                            .from('user_settings')
+                            .insert({
+                                user_id: currentUser.id,
+                                monthly_budget: 2000
+                            });
+                        
+                        if (insertError) {
+                            console.error('创建用户设置失败:', insertError);
+                        }
+                        monthlyBudget = 2000;
+                    } else {
+                        console.error('加载预算错误:', budgetError);
+                        monthlyBudget = 2000;
+                    }
+                } else if (budgetData) {
+                    monthlyBudget = budgetData.monthly_budget;
+                } else {
+                    await supabaseClient.from('user_settings').insert({
+                        user_id: currentUser.id,
+                        monthly_budget: 2000
+                    });
+                    monthlyBudget = 2000;
+                }
+
+                const { data: expensesData } = await supabaseClient
+                    .from('expenses')
+                    .select('*')
+                    .eq('user_id', currentUser.id)
+                    .order('date', { ascending: false });
+
+                expenses = expensesData || [];
+            } catch (err) {
+                console.error('加载用户数据异常:', err);
+                monthlyBudget = 2000;
+                expenses = [];
             }
-
-            const { data: expensesData } = await supabaseClient
-                .from('expenses')
-                .select('*')
-                .eq('user_id', currentUser.id)
-                .order('date', { ascending: false });
-
-            expenses = expensesData || [];
         }
 
         async function syncData() {
@@ -640,7 +696,6 @@
             document.getElementById('descInput').value = '';
             document.getElementById('amountInput').value = '';
         }
-
         async function saveExpense() {
             const description = document.getElementById('descInput').value.trim();
             const amount = parseFloat(document.getElementById('amountInput').value);
